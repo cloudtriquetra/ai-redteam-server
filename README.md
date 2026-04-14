@@ -110,8 +110,9 @@ Open port **8000** in your EC2 security group inbound rules.
 {
   "trocr-base-printed": {
     "source": "hf",
-    "task": "ocr",
+    "task": "image-to-text",
     "description": "Printed text OCR (0.3B)",
+    "custom_loader": false,
     "loaded": false
   }
 }
@@ -163,7 +164,7 @@ python3 examples/send_audio.py recording.wav \
 ```json
 {
   "model": "whisper-base",
-  "task": "speech-to-text",
+  "task": "automatic-speech-recognition",
   "output": "The quick brown fox jumps over the lazy dog",
   "device": "mps"
 }
@@ -182,7 +183,7 @@ models:
   my-model:
     source: hf
     repo: organisation/model-name-on-huggingface
-    task: ocr           # see Supported Tasks below
+    task: image-to-text     # see Supported Tasks below
     description: What this model does
 ```
 
@@ -195,7 +196,7 @@ models:
   my-local-model:
     source: local
     path: /absolute/path/to/model/folder
-    task: captioning
+    task: image-to-text
     description: My locally trained model
 ```
 
@@ -207,8 +208,8 @@ The folder must contain `config.json` and model weights (`model.safetensors` or 
 models:
   partner-model:
     source: url
-    url: https://example.com/models/vlm-v2.zip
-    task: captioning
+    url: https://example.com/models/my-model-v1.zip
+    task: image-to-text
     description: Model received from partner
 ```
 
@@ -222,7 +223,7 @@ models:
     source: s3
     bucket: my-ml-models-bucket
     key: models/internal-vlm-v3.tar.gz
-    task: speech-to-text
+    task: automatic-speech-recognition
     description: Internal model
 ```
 
@@ -232,26 +233,72 @@ pip install boto3
 aws configure   # or set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY env vars
 ```
 
+### Pipeline kwargs — model-specific inference options
+
+Some models need extra arguments passed to the pipeline at inference time. Add a `pipeline_kwargs` block to any model entry in `models.yaml` — no Python changes needed:
+
+```yaml
+whisper-base:
+  source: hf
+  repo: openai/whisper-base
+  task: automatic-speech-recognition
+  description: Speech recognition (74M)
+  pipeline_kwargs:
+    return_timestamps: true   # required for audio longer than 30 seconds
+    language: en              # skip language detection, faster for English audio
+
+blip-base:
+  source: hf
+  repo: Salesforce/blip-image-captioning-base
+  task: image-to-text
+  description: Image captioning base (0.4B)
+  pipeline_kwargs:
+    max_new_tokens: 64        # prevents repetition loops on long captions
+```
+
+Any key-value pair under `pipeline_kwargs` is passed directly to the HuggingFace pipeline call. Check the model's HuggingFace page for supported parameters.
+
+### Custom loader fallback
+
+Most models load automatically via HuggingFace `pipeline()`. For rare models that need non-standard loading, add `custom_loader: true` and use the legacy task name:
+
+```yaml
+models:
+  unusual-model:
+    source: hf
+    repo: some-org/unusual-model
+    task: ocr               # legacy names: ocr | captioning | vqa |
+    custom_loader: true     #   speech-to-text | audio-classification
+    description: Needs custom loading
+```
+
 ---
 
 ## Supported Tasks
+
+The `task` field in `models.yaml` maps directly to HuggingFace pipeline task names. The server uses `pipeline()` automatically — no model-specific code needed.
 
 ### Vision
 
 | Task | `task` value | Input | Notes |
 |---|---|---|---|
-| OCR | `ocr` | image or text prompt | Reads printed/handwritten text from images |
-| Image captioning | `captioning` | image + optional prompt | Generates a text description of an image |
-| Visual Q&A | `vqa` | image + required prompt | Answers a question about an image |
+| OCR / image to text | `image-to-text` | image or text prompt | TrOCR, BLIP, GIT, LLaVA all use this |
+| Visual Q&A | `visual-question-answering` | image + required prompt | Answers a question about an image |
+| Image classification | `image-classification` | image | Returns class label |
+| Document Q&A | `document-question-answering` | image + required prompt | Extracts answers from document images |
 
 ### Audio
 
 | Task | `task` value | Input | Notes |
 |---|---|---|---|
-| Speech to text | `speech-to-text` | audio file | Transcribes spoken audio. Auto-resamples to 16kHz. |
-| Audio classification | `audio-classification` | audio file | Classifies audio events (music, speech, noise etc.) |
+| Speech to text | `automatic-speech-recognition` | audio file | Auto-resamples to 16kHz |
+| Audio classification | `audio-classification` | audio file | Returns class label |
 
 Audio supports WAV, MP3, FLAC, OGG, M4A — any sample rate is automatically resampled.
+
+### Legacy task names (custom_loader only)
+
+If `custom_loader: true` is set, these original task names are still supported for backward compatibility: `ocr`, `captioning`, `vqa`, `speech-to-text`, `audio-classification`.
 
 ---
 
@@ -261,21 +308,23 @@ Audio supports WAV, MP3, FLAC, OGG, M4A — any sample rate is automatically res
 
 | Model key | HuggingFace repo | Task | Size |
 |---|---|---|---|
-| `trocr-base-printed` | microsoft/trocr-base-printed | ocr | 0.3B |
-| `trocr-large-printed` | microsoft/trocr-large-printed | ocr | 0.7B |
-| `trocr-base-handwritten` | microsoft/trocr-base-handwritten | ocr | 0.3B |
-| `blip-base` | Salesforce/blip-image-captioning-base | captioning | 0.4B |
-| `blip-large` | Salesforce/blip-image-captioning-large | captioning | 1B |
-| `git-base` | microsoft/git-base | captioning | 0.7B |
-| `vilt-vqa` | dandelin/vilt-b32-finetuned-vqa | vqa | 0.2B |
+| `trocr-base-printed` | microsoft/trocr-base-printed | image-to-text | 0.3B |
+| `trocr-large-printed` | microsoft/trocr-large-printed | image-to-text | 0.7B |
+| `trocr-base-handwritten` | microsoft/trocr-base-handwritten | image-to-text | 0.3B |
+| `blip-base` | Salesforce/blip-image-captioning-base | image-to-text | 0.4B |
+| `blip-large` | Salesforce/blip-image-captioning-large | image-to-text | 1B |
+| `git-base` | microsoft/git-base | image-to-text | 0.7B |
+| `vilt-vqa` | dandelin/vilt-b32-finetuned-vqa | visual-question-answering | 0.2B |
+| `moondream2` | vikhyatk/moondream2 | image-to-text | 1.8B |
+| `llava-1.5-7b` | llava-hf/llava-1.5-7b-hf | image-to-text | 7B — needs ~14GB RAM |
 
 ### Audio models
 
 | Model key | HuggingFace repo | Task | Size |
 |---|---|---|---|
-| `whisper-base` | openai/whisper-base | speech-to-text | 74M |
-| `whisper-small` | openai/whisper-small | speech-to-text | 244M |
-| `wav2vec2-base` | facebook/wav2vec2-base-960h | speech-to-text | 95M |
+| `whisper-base` | openai/whisper-base | automatic-speech-recognition | 74M |
+| `whisper-small` | openai/whisper-small | automatic-speech-recognition | 244M |
+| `wav2vec2-base` | facebook/wav2vec2-base-960h | automatic-speech-recognition | 95M |
 | `audio-classifier` | MIT/ast-finetuned-audioset-10-10-0.4593 | audio-classification | 87M |
 
 ---
@@ -298,11 +347,11 @@ ai-redteam-server/
 
 ## Infrastructure Guide
 
-| Model size | Recommended instance | Cost |
-|---|---|---|
-| Small (< 1B) — TrOCR, Whisper-base, BLIP-base | t3.large (CPU) or Mac Air | ~$0.08/hr or free |
-| Medium (1–3B) — BLIP-large, Whisper-small | g4dn.xlarge (T4 GPU) | ~$0.53/hr |
-| Large (3B+) | g4dn.2xlarge or g5.xlarge | ~$0.75–$1.00/hr |
+| Model size | Examples | Recommended instance | Cost |
+|---|---|---|---|
+| Small (< 1B) | TrOCR, Whisper-base, BLIP-base | t3.large (CPU) or Mac Air | ~$0.08/hr or free |
+| Medium (1–3B) | BLIP-large, Whisper-small, Moondream2 | g4dn.xlarge (T4 GPU) | ~$0.53/hr |
+| Large (7B+) | LLaVA-1.5-7b | g4dn.xlarge (16GB VRAM) or g5.xlarge | ~$0.53–$1.00/hr |
 
 Tip: only run GPU instances during active red team sessions to keep costs low.
 
@@ -315,9 +364,29 @@ Tip: only run GPU instances during active red team sessions to keep costs low.
 PYTORCH_ENABLE_MPS_FALLBACK=1 uvicorn vlm_server:app --host 0.0.0.0 --port 8000
 ```
 
+**`accelerate` not found / float16 warning**
+`pipeline()` with float16 requires `accelerate`. It is in `requirements.txt` but if you see this error:
+```bash
+pip install accelerate
+```
+
 **transformers version conflict**
 ```bash
 pip install "transformers>=4.40.0,<5.0.0" --force-reinstall
+```
+
+**Whisper error: more than 3000 mel input features**
+Audio longer than 30 seconds requires `return_timestamps: true`. Add it to the model's `pipeline_kwargs` in `models.yaml`:
+```yaml
+pipeline_kwargs:
+  return_timestamps: true
+```
+
+**BLIP / image-to-text repeating output**
+The model is looping without a stopping condition. Add `max_new_tokens` to the model's `pipeline_kwargs` in `models.yaml`:
+```yaml
+pipeline_kwargs:
+  max_new_tokens: 64
 ```
 
 **Audio sample rate error**
@@ -331,9 +400,11 @@ pip install librosa soundfile
 - For `source: local`, confirm the path exists and contains `config.json`
 - Check server logs — model load errors are printed with full tracebacks
 
+**pipeline() fails for a specific model**
+A small number of older or non-standard models don't work with `pipeline()`. Add `custom_loader: true` to the model entry in `models.yaml` and use a legacy task name (`ocr`, `captioning`, `vqa`, `speech-to-text`, `audio-classification`).
+
 **Slow first request**
-- HuggingFace models download on first request (~0.3–5GB depending on model)
-- Subsequent requests use the local cache and are fast
+HuggingFace models download on first request (~0.3–14GB depending on model). Subsequent requests use the local cache and are fast.
 
 **Port already in use**
 ```bash
