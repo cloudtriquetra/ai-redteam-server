@@ -6,6 +6,9 @@ Pillow>=10.0.0
 fastapi>=0.110.0
 uvicorn>=0.29.0
 pyyaml>=6.0
+soundfile>=0.12.0       # ← audio decoding
+librosa>=0.10.0         # ← audio resampling
+numpy>=1.24.0           # ← required by librosa
 
 # Optional — only needed for source: s3 in models.yaml
 # boto3>=1.34.0
