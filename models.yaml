@@ -34,12 +34,16 @@ models:
     repo: Salesforce/blip-image-captioning-base
     task: image-to-text
     description: Image captioning base (0.4B)
+    pipeline_kwargs:
+      max_new_tokens: 64
 
   blip-large:
     source: hf
     repo: Salesforce/blip-image-captioning-large
     task: image-to-text
     description: Image captioning large (1B)
+    pipeline_kwargs:
+      max_new_tokens: 64
 
   git-base:
     source: hf
@@ -76,6 +80,7 @@ models:
   # ══════════════════════════════════════════════════════════════════════════
 
   # ── Speech to text ────────────────────────────────────────────────────────
+
   whisper-base:
     source: hf
     repo: openai/whisper-base
@@ -83,6 +88,7 @@ models:
     description: Speech recognition (74M)
     pipeline_kwargs:
       return_timestamps: true
+      language: en
 
   whisper-small:
     source: hf
@@ -91,6 +97,7 @@ models:
     description: Speech recognition (244M)
     pipeline_kwargs:
       return_timestamps: true
+      language: en
 
   wav2vec2-base:
     source: hf
